@@ -1,0 +1,14 @@
+C:\Users\Sidou\Downloads\New folder\bin\Debug\net8.0-windows\TouchSwitch.exe
+C:\Users\Sidou\Downloads\New folder\bin\Debug\net8.0-windows\TouchSwitch.deps.json
+C:\Users\Sidou\Downloads\New folder\bin\Debug\net8.0-windows\TouchSwitch.runtimeconfig.json
+C:\Users\Sidou\Downloads\New folder\bin\Debug\net8.0-windows\TouchSwitch.dll
+C:\Users\Sidou\Downloads\New folder\bin\Debug\net8.0-windows\TouchSwitch.pdb
+C:\Users\Sidou\Downloads\New folder\obj\Debug\net8.0-windows\TouchSwitch.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Sidou\Downloads\New folder\obj\Debug\net8.0-windows\TouchSwitch.AssemblyInfoInputs.cache
+C:\Users\Sidou\Downloads\New folder\obj\Debug\net8.0-windows\TouchSwitch.AssemblyInfo.cs
+C:\Users\Sidou\Downloads\New folder\obj\Debug\net8.0-windows\TouchSwitch.csproj.CoreCompileInputs.cache
+C:\Users\Sidou\Downloads\New folder\obj\Debug\net8.0-windows\TouchSwitch.dll
+C:\Users\Sidou\Downloads\New folder\obj\Debug\net8.0-windows\refint\TouchSwitch.dll
+C:\Users\Sidou\Downloads\New folder\obj\Debug\net8.0-windows\TouchSwitch.pdb
+C:\Users\Sidou\Downloads\New folder\obj\Debug\net8.0-windows\TouchSwitch.genruntimeconfig.cache
+C:\Users\Sidou\Downloads\New folder\obj\Debug\net8.0-windows\ref\TouchSwitch.dll
