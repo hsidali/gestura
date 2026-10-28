@@ -255,7 +255,8 @@ static class WindowList
         try
         {
             Native.GetWindowThreadProcessId(hwnd, out uint pid);
-            return Process.GetProcessById((int)pid).StartTime;
+            using var p = Process.GetProcessById((int)pid);
+            return p.StartTime;
         }
         catch
         {
