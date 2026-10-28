@@ -22,7 +22,8 @@ static class Program
     {
         ApplicationConfiguration.Initialize();
 
-        var gesture = new SwitchGesture();
+        var overlay = new SlideOverlay();
+        var gesture = new SwitchGesture(overlay);
         var input = new TouchInput();
         input.Frame += gesture.OnFrame;
 
@@ -47,7 +48,7 @@ sealed class SwitchGesture
 {
     // Touchpad units, which vary by hardware. Lower = more sensitive.
     const int FirstThreshold = 250;  // distance for the first switch of a gesture
-    const int StepThreshold = 300;   // distance for each further switch while fingers stay down
+    const int StepThreshold = 200;   // distance for each further switch while fingers stay down
 
     readonly System.Windows.Forms.Timer idle = new() { Interval = 120 };
     List<IntPtr> windows = new();
@@ -55,8 +56,11 @@ sealed class SwitchGesture
     bool tracking, session;
     int anchorX;
 
-    public SwitchGesture()
+    readonly SlideOverlay overlay;
+
+    public SwitchGesture(SlideOverlay overlay)
     {
+        this.overlay = overlay;
         // If the touchpad stops reporting, treat it as "fingers lifted".
         idle.Tick += (_, _) => Reset();
     }
@@ -99,8 +103,10 @@ sealed class SwitchGesture
 
         int dir = dx < 0 ? +1 : -1; // swipe left = next, swipe right = previous
         int n = windows.Count;
-        current = current < 0 ? 0 : ((current + dir) % n + n) % n;
+        int prev = current;
+        current = prev < 0 ? 0 : ((prev + dir) % n + n) % n;
 
+        if (prev >= 0) overlay.Begin(windows[prev], windows[current], dir);
         WindowList.Activate(windows[current]);
         anchorX = avgX; // re-anchor: keep swiping to switch again without lifting
     }
@@ -288,6 +294,117 @@ static class WindowList
     }
 }
 
+// ---------------------------------------------------------------- slide animation
+
+// A borderless, non-activating window that covers the work area for ~200 ms and slides
+// live DWM thumbnails of the old and new windows. The real switch has already happened
+// underneath; hiding the overlay at the end reveals the real window.
+sealed class SlideOverlay : Form
+{
+    const int DurationMs = 220;
+
+    readonly System.Windows.Forms.Timer timer = new() { Interval = 8 };
+    readonly Stopwatch clock = new();
+    IntPtr thumbOld, thumbNew;
+    Rectangle rectOld, rectNew;
+    int dir;
+
+    public SlideOverlay()
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        TopMost = true;
+        StartPosition = FormStartPosition.Manual;
+        BackColor = Color.Black;
+        timer.Tick += (_, _) => Step();
+    }
+
+    protected override bool ShowWithoutActivation => true;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.ExStyle |= 0x08000000 | 0x80; // NOACTIVATE | TOOLWINDOW
+            return cp;
+        }
+    }
+
+    // dir = +1: old slides out to the left, new comes in from the right. -1: the reverse.
+    // Returns false (no animation) for minimized windows or windows on different monitors.
+    public bool Begin(IntPtr from, IntPtr to, int direction)
+    {
+        if (Native.IsIconic(from) || Native.IsIconic(to)) return false;
+        if (!Native.GetWindowRect(from, out var a) || !Native.GetWindowRect(to, out var b)) return false;
+
+        var screen = Screen.FromHandle(from);
+        if (screen.DeviceName != Screen.FromHandle(to).DeviceName) return false;
+
+        Release();
+        dir = direction;
+        Bounds = screen.WorkingArea;
+        rectOld = ToLocal(a, screen.WorkingArea);
+        rectNew = ToLocal(b, screen.WorkingArea);
+
+        IntPtr h = Handle; // make sure the window handle exists
+        if (Native.DwmRegisterThumbnail(h, from, out thumbOld) != 0 ||
+            Native.DwmRegisterThumbnail(h, to, out thumbNew) != 0)
+        {
+            Release();
+            return false;
+        }
+
+        Apply(0);
+        if (!Visible) Show();
+        clock.Restart();
+        timer.Start();
+        return true;
+    }
+
+    static Rectangle ToLocal(Native.RECT r, Rectangle origin) =>
+        new(r.Left - origin.X, r.Top - origin.Y, r.Right - r.Left, r.Bottom - r.Top);
+
+    void Step()
+    {
+        double t = Math.Min(1.0, clock.ElapsedMilliseconds / (double)DurationMs);
+        Apply(1 - Math.Pow(1 - t, 3)); // ease-out cubic
+
+        if (t >= 1.0)
+        {
+            timer.Stop();
+            Release();
+            Hide();
+        }
+    }
+
+    void Apply(double e)
+    {
+        Place(thumbOld, rectOld, (int)(-dir * Width * e));
+        Place(thumbNew, rectNew, (int)(dir * Width * (1 - e)));
+    }
+
+    static void Place(IntPtr thumb, Rectangle r, int dx)
+    {
+        if (thumb == IntPtr.Zero) return;
+        var props = new Native.DWM_THUMBNAIL_PROPERTIES
+        {
+            dwFlags = 0x1 | 0x4 | 0x8, // RECTDESTINATION | OPACITY | VISIBLE
+            rcDestination = new Native.RECT { Left = r.Left + dx, Top = r.Top, Right = r.Right + dx, Bottom = r.Bottom },
+            opacity = 255,
+            fVisible = true
+        };
+        Native.DwmUpdateThumbnailProperties(thumb, ref props);
+    }
+
+    void Release()
+    {
+        if (thumbOld != IntPtr.Zero) Native.DwmUnregisterThumbnail(thumbOld);
+        if (thumbNew != IntPtr.Zero) Native.DwmUnregisterThumbnail(thumbNew);
+        thumbOld = thumbNew = IntPtr.Zero;
+    }
+}
+
 // ---------------------------------------------------------------- Win32
 
 static class Native
@@ -311,6 +428,28 @@ static class Native
         public IntPtr Device;
         public IntPtr WParam;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DWM_THUMBNAIL_PROPERTIES
+    {
+        public uint dwFlags;
+        public RECT rcDestination;
+        public RECT rcSource;
+        public byte opacity;
+        [MarshalAs(UnmanagedType.Bool)] public bool fVisible;
+        [MarshalAs(UnmanagedType.Bool)] public bool fSourceClientAreaOnly;
+    }
+
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+    [DllImport("dwmapi.dll")] public static extern int DwmRegisterThumbnail(IntPtr dest, IntPtr src, out IntPtr thumb);
+    [DllImport("dwmapi.dll")] public static extern int DwmUnregisterThumbnail(IntPtr thumb);
+    [DllImport("dwmapi.dll")] public static extern int DwmUpdateThumbnailProperties(IntPtr thumb, ref DWM_THUMBNAIL_PROPERTIES props);
 
     [DllImport("user32.dll")] public static extern bool RegisterRawInputDevices(RAWINPUTDEVICE[] devices, uint count, uint size);
     [DllImport("user32.dll")] public static extern uint GetRawInputData(IntPtr hRaw, uint cmd, IntPtr data, ref uint size, uint headerSize);
