@@ -1,6 +1,7 @@
 // TouchSwitch v2
 // Three-finger swipe LEFT  -> next app in a fixed, circular order (1 -> 2 -> 3 -> 1)
 // Three-finger swipe RIGHT -> previous app (1 -> 3 -> 2 -> 1)
+// Keep your fingers down and keep swiping to keep switching.
 // Order is by app launch time, so it stays stable (unlike Alt+Tab's most-recently-used order).
 //
 // Needs a Windows Precision Touchpad. Disable Windows' own three-finger swipe first:
@@ -45,11 +46,14 @@ static class Program
 sealed class SwitchGesture
 {
     // Touchpad units, which vary by hardware. Lower = more sensitive.
-    const int Threshold = 250;
+    const int FirstThreshold = 250;  // distance for the first switch of a gesture
+    const int StepThreshold = 300;   // distance for each further switch while fingers stay down
 
     readonly System.Windows.Forms.Timer idle = new() { Interval = 120 };
-    bool tracking, fired;
-    int startX;
+    List<IntPtr> windows = new();
+    int current;
+    bool tracking, session;
+    int anchorX;
 
     public SwitchGesture()
     {
@@ -73,25 +77,39 @@ sealed class SwitchGesture
         if (!tracking)
         {
             tracking = true;
-            fired = false;
-            startX = avgX;
+            session = false;
+            anchorX = avgX;
             return;
         }
 
-        if (fired) return; // one switch per swipe; lift your fingers to swipe again
+        int dx = avgX - anchorX;
+        if (Math.Abs(dx) < (session ? StepThreshold : FirstThreshold)) return;
 
-        int dx = avgX - startX;
-        if (Math.Abs(dx) < Threshold) return;
+        if (!session)
+        {
+            windows = WindowList.Get();
+            if (windows.Count < 2)
+            {
+                anchorX = avgX;
+                return;
+            }
+            current = WindowList.IndexOfForeground(windows);
+            session = true;
+        }
 
-        fired = true;
-        WindowList.Cycle(dx < 0 ? +1 : -1); // swipe left = next, swipe right = previous
+        int dir = dx < 0 ? +1 : -1; // swipe left = next, swipe right = previous
+        int n = windows.Count;
+        current = current < 0 ? 0 : ((current + dir) % n + n) % n;
+
+        WindowList.Activate(windows[current]);
+        anchorX = avgX; // re-anchor: keep swiping to switch again without lifting
     }
 
     void Reset()
     {
         idle.Stop();
         tracking = false;
-        fired = false;
+        session = false;
     }
 }
 
@@ -254,21 +272,13 @@ static class WindowList
         return cls.ToString() != "Progman";
     }
 
-    // dir = +1 for next app, -1 for previous app, wrapping around.
-    public static void Cycle(int dir)
+    public static int IndexOfForeground(List<IntPtr> list)
     {
-        var list = Get();
-        int n = list.Count;
-        if (n < 2) return;
-
         IntPtr fg = Native.GetAncestor(Native.GetForegroundWindow(), 3); // GA_ROOTOWNER
-        int i = list.IndexOf(fg);
-        int next = i < 0 ? 0 : ((i + dir) % n + n) % n;
-
-        Activate(list[next]);
+        return list.IndexOf(fg);
     }
 
-    static void Activate(IntPtr h)
+    public static void Activate(IntPtr h)
     {
         if (Native.IsIconic(h)) Native.ShowWindow(h, 9); // SW_RESTORE
         // Tapping Alt lets us get past Windows' foreground-lock restriction.

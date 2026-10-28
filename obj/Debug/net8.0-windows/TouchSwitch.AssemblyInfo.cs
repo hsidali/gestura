@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("TouchSwitch")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+35fb7a56ec2f2b27fa492f521075782b352d9e55")]
 [assembly: System.Reflection.AssemblyProductAttribute("TouchSwitch")]
 [assembly: System.Reflection.AssemblyTitleAttribute("TouchSwitch")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
